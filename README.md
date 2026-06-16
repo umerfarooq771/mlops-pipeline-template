@@ -15,7 +15,7 @@
 
 ## 🚀 Live Demo
 
-👉 **[Try the Streamlit App](https://your-app.streamlit.app)** ← deploy and update this link
+👉 [**** ← deploy and update this link](https://mlops-pipeline-template-z2eqbirriujfprmo2ubkxe.streamlit.app)
 
 ---
 
