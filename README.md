@@ -15,7 +15,7 @@
 
 ## 🚀 Live Demo
 
-👉 [**** ← deploy and update this link](https://mlops-pipeline-template-z2eqbirriujfprmo2ubkxe.streamlit.app)
+👉 [Live Link](https://mlops-pipeline-template-z2eqbirriujfprmo2ubkxe.streamlit.app)
 
 ---
 
