@@ -2,29 +2,29 @@
 Equipment Failure Detection — MLOps Dashboard
 Author: Muhammad Umer
 """
-import streamlit as st
-import pandas as pd
-import numpy as np
-import joblib
+
 import json
 import os
+import subprocess
 import sys
 import time
-import subprocess
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime
+
+import joblib
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 st.set_page_config(
-    page_title="Failure Detection — MLOps",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Failure Detection — MLOps", page_icon=None, layout="wide", initial_sidebar_state="expanded"
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
   /* tone down Streamlit defaults */
   [data-testid="stSidebar"] { background: #fafafa; border-right: 1px solid #e5e5e5; }
@@ -63,7 +63,9 @@ st.markdown("""
 
   .divider { border: none; border-top: 1px solid #e5e5e5; margin: 1.25rem 0; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +103,7 @@ def save_config(cfg: dict):
 @st.cache_resource
 def load_model_cached():
     try:
-        model  = joblib.load("models/xgboost_model.joblib")
+        model = joblib.load("models/xgboost_model.joblib")
         scaler = joblib.load("models/scaler.joblib")
         return model, scaler
     except Exception:
@@ -127,15 +129,19 @@ def build_features(temperature, vibration, pressure, rpm, oil_level):
         features.append(v)
         features.append(0.0)
     features.append(temperature / (vibration + 1e-6))
-    features.append(pressure   / (rpm       + 1e-6))
+    features.append(pressure / (rpm + 1e-6))
     return np.array(features).reshape(1, -1)
 
 
 def risk_label(prob):
-    if prob < 0.3:   return "LOW",      "pill-low",      "Normal operations. Schedule next routine inspection."
-    elif prob < 0.6: return "MEDIUM",   "pill-medium",   "Increase monitoring frequency. Inspect within 48 hours."
-    elif prob < 0.8: return "HIGH",     "pill-high",     "Immediate inspection recommended. Reduce load if possible."
-    else:            return "CRITICAL", "pill-critical",  "Halt operations and perform emergency maintenance."
+    if prob < 0.3:
+        return "LOW", "pill-low", "Normal operations. Schedule next routine inspection."
+    elif prob < 0.6:
+        return "MEDIUM", "pill-medium", "Increase monitoring frequency. Inspect within 48 hours."
+    elif prob < 0.8:
+        return "HIGH", "pill-high", "Immediate inspection recommended. Reduce load if possible."
+    else:
+        return "CRITICAL", "pill-critical", "Halt operations and perform emergency maintenance."
 
 
 def run_retraining(cfg: dict, log_placeholder):
@@ -152,9 +158,11 @@ def run_retraining(cfg: dict, log_placeholder):
     ts = lambda: datetime.now().strftime("%H:%M:%S")
 
     emit(f'<span class="log-dim">{ts()}</span>  Starting retraining job')
-    emit(f'<span class="log-dim">{ts()}</span>  model_type={cfg["model_type"]}  '
-         f'n_estimators={cfg["n_estimators"]}  max_depth={cfg["max_depth"]}  '
-         f'lr={cfg["learning_rate"]}  test_size={cfg["test_size"]}')
+    emit(
+        f'<span class="log-dim">{ts()}</span>  model_type={cfg["model_type"]}  '
+        f'n_estimators={cfg["n_estimators"]}  max_depth={cfg["max_depth"]}  '
+        f'lr={cfg["learning_rate"]}  test_size={cfg["test_size"]}'
+    )
     time.sleep(0.4)
 
     # Step 1 — dataset
@@ -164,20 +172,27 @@ def run_retraining(cfg: dict, log_placeholder):
         emit(f'<span class="log-dim">{ts()}</span>        generated 5,000 rows', "log-dim")
     else:
         df_check = pd.read_csv("data/synthetic/sensor_data.csv")
-        emit(f'<span class="log-dim">{ts()}</span>        {len(df_check):,} rows  '
-             f'failure_rate={df_check["failure"].mean():.2%}', "log-dim")
+        emit(
+            f'<span class="log-dim">{ts()}</span>        {len(df_check):,} rows  '
+            f'failure_rate={df_check["failure"].mean():.2%}',
+            "log-dim",
+        )
     time.sleep(0.3)
 
     # Step 2 — preprocess
     emit(f'<span class="log-dim">{ts()}</span>  [2/4] Preprocessing ...')
     from src.ingestion.preprocess import preprocess
+
     X_train, X_test, y_train, y_test, feature_cols = preprocess(
         "data/synthetic/sensor_data.csv",
         test_size=cfg["test_size"],
         save_scaler=True,
     )
-    emit(f'<span class="log-dim">{ts()}</span>        train={len(X_train):,}  '
-         f'test={len(X_test):,}  features={len(feature_cols)}', "log-dim")
+    emit(
+        f'<span class="log-dim">{ts()}</span>        train={len(X_train):,}  '
+        f"test={len(X_test):,}  features={len(feature_cols)}",
+        "log-dim",
+    )
     time.sleep(0.3)
 
     # Step 3 — train
@@ -202,9 +217,7 @@ def run_retraining(cfg: dict, log_placeholder):
             class_weight="balanced",
             random_state=42,
         ),
-        "logistic_regression": LogisticRegression(
-            class_weight="balanced", max_iter=1000, random_state=42
-        ),
+        "logistic_regression": LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42),
     }
 
     model = model_map[cfg["model_type"]]
@@ -213,16 +226,17 @@ def run_retraining(cfg: dict, log_placeholder):
 
     # Step 4 — evaluate
     emit(f'<span class="log-dim">{ts()}</span>  [4/4] Evaluating ...')
-    from sklearn.metrics import roc_auc_score, average_precision_score
-    y_prob   = model.predict_proba(X_test)[:, 1]
-    roc_auc  = round(roc_auc_score(y_test, y_prob), 4)
+    from sklearn.metrics import average_precision_score, roc_auc_score
+
+    y_prob = model.predict_proba(X_test)[:, 1]
+    roc_auc = round(roc_auc_score(y_test, y_prob), 4)
     avg_prec = round(average_precision_score(y_test, y_prob), 4)
 
     os.makedirs("models", exist_ok=True)
     joblib.dump(model, "models/xgboost_model.joblib")
 
-    cfg["last_trained"]      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cfg["last_roc_auc"]      = roc_auc
+    cfg["last_trained"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cfg["last_roc_auc"] = roc_auc
     cfg["last_avg_precision"] = avg_prec
     save_config(cfg)
 
@@ -271,13 +285,13 @@ if page == "Prediction":
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
-        temperature  = st.slider("Temperature (°C)",  50.0, 120.0, 75.0,  0.5)
-        vibration    = st.slider("Vibration (mm/s)",   0.1,   1.5,  0.5, 0.01)
-        pressure     = st.slider("Pressure (bar)",     60.0, 140.0,100.0,  0.5)
-        rpm          = st.slider("RPM",               1500,  4000, 3000,    50)
-        oil_level    = st.slider("Oil level",           0.0,   1.0,  0.8, 0.01)
-        machine_id   = st.selectbox("Machine", ["M01","M02","M03","M04","M05"])
-        predict_btn  = st.button("Run prediction", type="primary", use_container_width=True)
+        temperature = st.slider("Temperature (°C)", 50.0, 120.0, 75.0, 0.5)
+        vibration = st.slider("Vibration (mm/s)", 0.1, 1.5, 0.5, 0.01)
+        pressure = st.slider("Pressure (bar)", 60.0, 140.0, 100.0, 0.5)
+        rpm = st.slider("RPM", 1500, 4000, 3000, 50)
+        oil_level = st.slider("Oil level", 0.0, 1.0, 0.8, 0.01)
+        machine_id = st.selectbox("Machine", ["M01", "M02", "M03", "M04", "M05"])
+        predict_btn = st.button("Run prediction", type="primary", use_container_width=True)
 
     with col2:
         if predict_btn:
@@ -299,28 +313,28 @@ if page == "Prediction":
             )
             st.caption(advice)
 
-            gauge = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=prob * 100,
-                number={"suffix": "%", "font": {"size": 32}},
-                gauge={
-                    "axis": {"range": [0, 100], "tickwidth": 1},
-                    "bar": {"color": "#374151"},
-                    "bgcolor": "white",
-                    "steps": [
-                        {"range": [0, 30],  "color": "#ecfdf5"},
-                        {"range": [30, 60], "color": "#fffbeb"},
-                        {"range": [60, 80], "color": "#fff1f2"},
-                        {"range": [80, 100],"color": "#ffe4e6"},
-                    ],
-                    "threshold": {
-                        "line": {"color": "#6b7280", "width": 2},
-                        "thickness": 0.75, "value": 60
+            gauge = go.Figure(
+                go.Indicator(
+                    mode="gauge+number",
+                    value=prob * 100,
+                    number={"suffix": "%", "font": {"size": 32}},
+                    gauge={
+                        "axis": {"range": [0, 100], "tickwidth": 1},
+                        "bar": {"color": "#374151"},
+                        "bgcolor": "white",
+                        "steps": [
+                            {"range": [0, 30], "color": "#ecfdf5"},
+                            {"range": [30, 60], "color": "#fffbeb"},
+                            {"range": [60, 80], "color": "#fff1f2"},
+                            {"range": [80, 100], "color": "#ffe4e6"},
+                        ],
+                        "threshold": {"line": {"color": "#6b7280", "width": 2}, "thickness": 0.75, "value": 60},
                     },
-                },
-            ))
+                )
+            )
             gauge.update_layout(
-                height=260, margin=dict(t=30, b=10, l=20, r=20),
+                height=260,
+                margin=dict(t=30, b=10, l=20, r=20),
                 font=dict(family="sans-serif"),
             )
             st.plotly_chart(gauge, use_container_width=True)
@@ -333,10 +347,10 @@ elif page == "Data":
     df = load_dataset()
     if df is not None:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Rows",           f"{len(df):,}")
-        c2.metric("Machines",       df["machine_id"].nunique())
+        c1.metric("Rows", f"{len(df):,}")
+        c2.metric("Machines", df["machine_id"].nunique())
         c3.metric("Failure events", int(df["failure"].sum()))
-        c4.metric("Failure rate",   f"{df['failure'].mean():.2%}")
+        c4.metric("Failure rate", f"{df['failure'].mean():.2%}")
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         sensor = st.selectbox(
@@ -346,28 +360,38 @@ elif page == "Data":
 
         fig = px.line(
             df.sample(500, random_state=42).sort_values("timestamp"),
-            x="timestamp", y=sensor, color="machine_id",
+            x="timestamp",
+            y=sensor,
+            color="machine_id",
             color_discrete_sequence=px.colors.qualitative.Set2,
         )
         fig.update_layout(
             title=f"{sensor} — sample of 500 readings",
-            height=320, legend_title="Machine",
-            plot_bgcolor="white", paper_bgcolor="white",
-            xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#f0f0f0"),
+            height=320,
+            legend_title="Machine",
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(gridcolor="#f0f0f0"),
         )
         st.plotly_chart(fig, use_container_width=True)
 
         fig2 = px.histogram(
-            df, x=sensor,
+            df,
+            x=sensor,
             color=df["failure"].map({0: "Normal", 1: "Failure"}),
-            barmode="overlay", nbins=50,
+            barmode="overlay",
+            nbins=50,
             color_discrete_map={"Normal": "#93c5fd", "Failure": "#f87171"},
         )
         fig2.update_layout(
             title=f"{sensor} distribution — normal vs failure",
-            height=280, legend_title=None,
-            plot_bgcolor="white", paper_bgcolor="white",
-            xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#f0f0f0"),
+            height=280,
+            legend_title=None,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(gridcolor="#f0f0f0"),
         )
         st.plotly_chart(fig2, use_container_width=True)
     else:
@@ -390,7 +414,7 @@ elif page == "Retrain":
         st.markdown("**Hyperparameters**")
 
         n_estimators = st.slider("n_estimators", 50, 500, cfg["n_estimators"], 50)
-        max_depth    = st.slider("max_depth",      2,  12, cfg["max_depth"],      1)
+        max_depth = st.slider("max_depth", 2, 12, cfg["max_depth"], 1)
 
         if model_type in ("xgboost", "logistic_regression"):
             learning_rate = st.slider("learning_rate", 0.01, 0.5, cfg["learning_rate"], 0.01)
@@ -419,8 +443,7 @@ elif page == "Retrain":
 
         changed = any(
             new_cfg[k] != cfg[k]
-            for k in ["model_type","n_estimators","max_depth",
-                      "learning_rate","scale_pos_weight","test_size"]
+            for k in ["model_type", "n_estimators", "max_depth", "learning_rate", "scale_pos_weight", "test_size"]
         )
         if changed:
             st.caption("Unsaved changes — click Retrain to apply.")
@@ -453,7 +476,7 @@ elif page == "Retrain":
         if retrain_btn:
             save_config(new_cfg)
             cfg = new_cfg
-            prev_auc  = cfg.get("last_roc_auc")
+            prev_auc = cfg.get("last_roc_auc")
             prev_prec = cfg.get("last_avg_precision")
 
             roc_auc, avg_prec = run_retraining(cfg, log_placeholder)
@@ -462,15 +485,17 @@ elif page == "Retrain":
             st.success(f"Retrain complete — ROC-AUC {roc_auc}  |  Avg precision {avg_prec}")
 
             if prev_auc is not None:
-                comp = pd.DataFrame({
-                    "Metric":   ["ROC-AUC", "Avg precision"],
-                    "Before":   [prev_auc,  prev_prec],
-                    "After":    [roc_auc,   avg_prec],
-                    "Delta":    [
-                        round(roc_auc  - prev_auc,  4),
-                        round(avg_prec - prev_prec, 4),
-                    ],
-                })
+                comp = pd.DataFrame(
+                    {
+                        "Metric": ["ROC-AUC", "Avg precision"],
+                        "Before": [prev_auc, prev_prec],
+                        "After": [roc_auc, avg_prec],
+                        "Delta": [
+                            round(roc_auc - prev_auc, 4),
+                            round(avg_prec - prev_prec, 4),
+                        ],
+                    }
+                )
                 st.dataframe(comp, use_container_width=True, hide_index=True)
 
             st.caption("Switch to Prediction to test the updated model.")
@@ -480,13 +505,15 @@ elif page == "Monitoring":
     st.title("Monitoring")
 
     np.random.seed(42)
-    dates  = pd.date_range("2024-01-01", periods=30, freq="D")
-    sim_df = pd.DataFrame({
-        "date":             dates,
-        "avg_failure_prob": np.clip(np.random.normal(0.08,0.03,30) + np.linspace(0,0.05,30), 0, 1),
-        "high_risk_pct":    np.clip(np.random.normal(0.05,0.02,30) + np.linspace(0,0.03,30), 0, 1),
-        "n_predictions":    np.random.randint(80, 150, 30),
-    })
+    dates = pd.date_range("2024-01-01", periods=30, freq="D")
+    sim_df = pd.DataFrame(
+        {
+            "date": dates,
+            "avg_failure_prob": np.clip(np.random.normal(0.08, 0.03, 30) + np.linspace(0, 0.05, 30), 0, 1),
+            "high_risk_pct": np.clip(np.random.normal(0.05, 0.02, 30) + np.linspace(0, 0.03, 30), 0, 1),
+            "n_predictions": np.random.randint(80, 150, 30),
+        }
+    )
 
     c1, c2, c3 = st.columns(3)
     c1.metric(
@@ -494,35 +521,50 @@ elif page == "Monitoring":
         f"{sim_df['avg_failure_prob'].tail(7).mean():.2%}",
         delta=f"{sim_df['avg_failure_prob'].tail(7).mean() - sim_df['avg_failure_prob'].head(7).mean():.2%}",
     )
-    c2.metric("High-risk rate",       f"{sim_df['high_risk_pct'].tail(7).mean():.2%}")
-    c3.metric("Predictions (30d)",    f"{sim_df['n_predictions'].sum():,}")
+    c2.metric("High-risk rate", f"{sim_df['high_risk_pct'].tail(7).mean():.2%}")
+    c3.metric("Predictions (30d)", f"{sim_df['n_predictions'].sum():,}")
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=sim_df["date"], y=sim_df["avg_failure_prob"],
-        mode="lines", name="Avg failure prob",
-        line=dict(color="#374151", width=1.5),
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=sim_df["date"],
+            y=sim_df["avg_failure_prob"],
+            mode="lines",
+            name="Avg failure prob",
+            line=dict(color="#374151", width=1.5),
+        )
+    )
     fig.add_hline(
-        y=0.15, line_dash="dot", line_color="#9ca3af",
-        annotation_text="alert threshold", annotation_position="top left",
+        y=0.15,
+        line_dash="dot",
+        line_color="#9ca3af",
+        annotation_text="alert threshold",
+        annotation_position="top left",
     )
     fig.update_layout(
-        title="Prediction drift — 30 days", height=300,
-        plot_bgcolor="white", paper_bgcolor="white",
-        xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#f0f0f0"),
+        title="Prediction drift — 30 days",
+        height=300,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(showgrid=False),
+        yaxis=dict(gridcolor="#f0f0f0"),
         legend=dict(orientation="h", y=1.1),
     )
     st.plotly_chart(fig, use_container_width=True)
 
     fig2 = px.bar(
-        sim_df, x="date", y="n_predictions",
+        sim_df,
+        x="date",
+        y="n_predictions",
         color_discrete_sequence=["#93c5fd"],
     )
     fig2.update_layout(
-        title="Daily prediction volume", height=240,
-        plot_bgcolor="white", paper_bgcolor="white",
-        xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#f0f0f0"),
+        title="Daily prediction volume",
+        height=240,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(showgrid=False),
+        yaxis=dict(gridcolor="#f0f0f0"),
     )
     st.plotly_chart(fig2, use_container_width=True)
 
@@ -535,58 +577,73 @@ elif page == "Model":
     with c1:
         st.markdown("**Configuration**")
         st.dataframe(
-            pd.DataFrame({
-                "Parameter": ["algorithm", "n_estimators", "max_depth",
-                              "learning_rate", "scale_pos_weight", "test_size"],
-                "Value": [
-                    current_cfg["model_type"],
-                    current_cfg["n_estimators"],
-                    current_cfg["max_depth"],
-                    current_cfg["learning_rate"],
-                    current_cfg["scale_pos_weight"],
-                    current_cfg["test_size"],
-                ],
-            }),
-            hide_index=True, use_container_width=True,
+            pd.DataFrame(
+                {
+                    "Parameter": [
+                        "algorithm",
+                        "n_estimators",
+                        "max_depth",
+                        "learning_rate",
+                        "scale_pos_weight",
+                        "test_size",
+                    ],
+                    "Value": [
+                        current_cfg["model_type"],
+                        current_cfg["n_estimators"],
+                        current_cfg["max_depth"],
+                        current_cfg["learning_rate"],
+                        current_cfg["scale_pos_weight"],
+                        current_cfg["test_size"],
+                    ],
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
 
     with c2:
         st.markdown("**Last training run**")
         st.dataframe(
-            pd.DataFrame({
-                "Metric": ["Trained at", "ROC-AUC", "Avg precision", "Features", "Training rows"],
-                "Value": [
-                    current_cfg.get("last_trained") or "—",
-                    current_cfg.get("last_roc_auc")      or "—",
-                    current_cfg.get("last_avg_precision") or "—",
-                    "17  (5 raw + 10 rolling + 2 ratios)",
-                    "4,000  (80/20 split)",
-                ],
-            }),
-            hide_index=True, use_container_width=True,
+            pd.DataFrame(
+                {
+                    "Metric": ["Trained at", "ROC-AUC", "Avg precision", "Features", "Training rows"],
+                    "Value": [
+                        current_cfg.get("last_trained") or "—",
+                        current_cfg.get("last_roc_auc") or "—",
+                        current_cfg.get("last_avg_precision") or "—",
+                        "17  (5 raw + 10 rolling + 2 ratios)",
+                        "4,000  (80/20 split)",
+                    ],
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
 
     st.markdown("**SHAP feature importance**")
     shap_data = {
-        "temperature_c":       0.38,
-        "vibration_mms":       0.25,
-        "pressure_bar":        0.15,
-        "rpm":                 0.12,
-        "oil_level":           0.05,
-        "temp_vibration_ratio":0.03,
-        "other":               0.02,
+        "temperature_c": 0.38,
+        "vibration_mms": 0.25,
+        "pressure_bar": 0.15,
+        "rpm": 0.12,
+        "oil_level": 0.05,
+        "temp_vibration_ratio": 0.03,
+        "other": 0.02,
     }
     fig = px.bar(
         x=list(shap_data.values()),
         y=list(shap_data.keys()),
         orientation="h",
         color=list(shap_data.values()),
-        color_continuous_scale=[[0,"#e5e7eb"],[1,"#374151"]],
+        color_continuous_scale=[[0, "#e5e7eb"], [1, "#374151"]],
     )
     fig.update_layout(
         title="Mean |SHAP| value per feature",
-        height=300, showlegend=False, coloraxis_showscale=False,
-        plot_bgcolor="white", paper_bgcolor="white",
+        height=300,
+        showlegend=False,
+        coloraxis_showscale=False,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
         xaxis=dict(showgrid=False, title=""),
         yaxis=dict(gridcolor="#f0f0f0", title=""),
     )

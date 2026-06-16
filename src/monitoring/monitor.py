@@ -2,13 +2,15 @@
 Model monitoring: tracks prediction drift, data distribution shifts,
 and performance degradation over time.
 """
-import pandas as pd
-import numpy as np
+
 import json
-import os
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List
+
+import numpy as np
+import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -28,8 +30,7 @@ def population_stability_index(expected: np.ndarray, actual: np.ndarray, buckets
     return round(float(psi), 4)
 
 
-def compute_feature_drift(reference_df: pd.DataFrame, current_df: pd.DataFrame,
-                           feature_cols: List[str]) -> Dict:
+def compute_feature_drift(reference_df: pd.DataFrame, current_df: pd.DataFrame, feature_cols: List[str]) -> Dict:
     drift_report = {}
     for col in feature_cols:
         if col not in reference_df.columns or col not in current_df.columns:
@@ -60,7 +61,7 @@ def log_prediction_batch(predictions: List[float], model_version: str = "v1.0"):
         "n_predictions": len(predictions),
         "avg_failure_probability": avg_prob,
         "high_risk_pct": high_risk_pct,
-        "alert": high_risk_pct > ALERT_THRESHOLD_PRED_SHIFT
+        "alert": high_risk_pct > ALERT_THRESHOLD_PRED_SHIFT,
     }
 
     with open(MONITOR_LOG, "a") as f:
@@ -86,6 +87,7 @@ def read_monitoring_log() -> pd.DataFrame:
 
 if __name__ == "__main__":
     import random
+
     random.seed(42)
     log.info("Simulating monitoring log entries...")
     for _ in range(10):

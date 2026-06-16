@@ -2,15 +2,17 @@
 FastAPI model serving endpoint.
 Exposes /predict and /health endpoints for the trained failure detection model.
 """
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+
+import logging
+import os
+from datetime import datetime
 from typing import Optional
+
 import joblib
 import numpy as np
 import pandas as pd
-import os
-import logging
-from datetime import datetime
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -89,11 +91,7 @@ def risk_label(prob: float) -> tuple:
 
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy",
-        "model_loaded": model is not None,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"status": "healthy", "model_loaded": model is not None, "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -113,7 +111,7 @@ def predict(reading: SensorReading):
         failure_probability=round(prob, 4),
         risk_level=risk,
         recommendation=recommendation,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.utcnow().isoformat(),
     )
 
 

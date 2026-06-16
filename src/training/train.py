@@ -2,22 +2,26 @@
 Model training pipeline with MLflow experiment tracking.
 Trains XGBoost classifier and logs params, metrics, and artifacts.
 """
+
+import logging
+import os
+import sys
+
+import joblib
 import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
-import xgboost as xgb
 import numpy as np
-import joblib
-import os
-import logging
-from sklearn.metrics import (
-    classification_report, roc_auc_score,
-    average_precision_score, confusion_matrix
-)
-from sklearn.linear_model import LogisticRegression
+import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    average_precision_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
 
-import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ingestion.preprocess import preprocess
 
@@ -41,18 +45,16 @@ def get_model_configs():
                 eval_metric="logloss",
                 random_state=42,
             ),
-            "params": {"n_estimators": 100, "max_depth": 5, "learning_rate": 0.1}
+            "params": {"n_estimators": 100, "max_depth": 5, "learning_rate": 0.1},
         },
         "random_forest": {
-            "model": RandomForestClassifier(
-                n_estimators=100, class_weight="balanced", random_state=42
-            ),
-            "params": {"n_estimators": 100, "class_weight": "balanced"}
+            "model": RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42),
+            "params": {"n_estimators": 100, "class_weight": "balanced"},
         },
         "logistic_regression": {
             "model": LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42),
-            "params": {"class_weight": "balanced", "max_iter": 1000}
-        }
+            "params": {"class_weight": "balanced", "max_iter": 1000},
+        },
     }
 
 

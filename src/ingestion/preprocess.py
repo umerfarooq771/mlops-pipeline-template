@@ -2,13 +2,15 @@
 Data ingestion & preprocessing pipeline.
 Loads raw sensor data, engineers features, and splits train/test sets.
 """
-import pandas as pd
+
+import logging
+import os
+
+import joblib
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import joblib
-import os
-import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -53,9 +55,7 @@ def preprocess(data_path: str, test_size: float = 0.2, save_scaler: bool = True)
     X = df[feature_cols]
     y = df[TARGET]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
 
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)

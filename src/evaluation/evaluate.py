@@ -1,18 +1,25 @@
 """
 Model evaluation: drift detection, SHAP explainability, and performance reports.
 """
-import pandas as pd
-import numpy as np
-import shap
-import joblib
-import os
+
 import json
 import logging
-from sklearn.metrics import roc_auc_score, average_precision_score
-
+import os
 import sys
+
+import joblib
+import numpy as np
+import pandas as pd
+import shap
+from sklearn.metrics import average_precision_score, roc_auc_score
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ingestion.preprocess import preprocess, get_feature_cols, load_data, engineer_features
+from ingestion.preprocess import (
+    engineer_features,
+    get_feature_cols,
+    load_data,
+    preprocess,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -51,14 +58,15 @@ def detect_drift(reference_path: str, current_path: str, feature_cols: list) -> 
             "ref_mean": round(ref_mean, 4),
             "cur_mean": round(cur_mean, 4),
             "drift_pct": round(drift_pct, 2),
-            "status": "DRIFT" if drift_pct > 10 else "OK"
+            "status": "DRIFT" if drift_pct > 10 else "OK",
         }
 
     return drift_report
 
 
-def generate_evaluation_report(model_path: str = "models/xgboost_model.joblib",
-                                data_path: str = "data/synthetic/sensor_data.csv"):
+def generate_evaluation_report(
+    model_path: str = "models/xgboost_model.joblib", data_path: str = "data/synthetic/sensor_data.csv"
+):
     os.makedirs(REPORT_DIR, exist_ok=True)
 
     X_train, X_test, y_train, y_test, feature_cols = preprocess(data_path, save_scaler=False)
@@ -69,7 +77,7 @@ def generate_evaluation_report(model_path: str = "models/xgboost_model.joblib",
         "roc_auc": round(roc_auc_score(y_test, y_prob), 4),
         "avg_precision": round(average_precision_score(y_test, y_prob), 4),
         "n_test_samples": len(y_test),
-        "failure_rate_test": round(float(y_test.mean()), 4)
+        "failure_rate_test": round(float(y_test.mean()), 4),
     }
     log.info(f"Evaluation metrics: {metrics}")
 
@@ -81,7 +89,7 @@ def generate_evaluation_report(model_path: str = "models/xgboost_model.joblib",
         "model": model_path,
         "metrics": metrics,
         "shap_feature_importance": dict(list(shap_importance.items())[:10]),
-        "drift_report": drift_report
+        "drift_report": drift_report,
     }
 
     report_path = os.path.join(REPORT_DIR, "evaluation_report.json")
