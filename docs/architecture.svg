@@ -1,0 +1,113 @@
+<svg viewBox="0 0 900 540" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#6c757d"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" font-size="17" font-weight="bold" fill="#212529">MLOps Pipeline — Architecture</text>
+
+  <!-- Row 1: Data -->
+  <rect x="60" y="60" width="160" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+  <text x="140" y="88" text-anchor="middle" font-weight="bold" fill="#085041">Raw Sensor Data</text>
+  <text x="140" y="106" text-anchor="middle" font-size="11" fill="#0F6E56">5 signals · 5,000 rows</text>
+  <text x="140" y="121" text-anchor="middle" font-size="11" fill="#0F6E56">CSV / streaming</text>
+
+  <!-- Arrow 1 -->
+  <line x1="220" y1="95" x2="270" y2="95" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Preprocessing -->
+  <rect x="270" y="60" width="160" height="70" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+  <text x="350" y="88" text-anchor="middle" font-weight="bold" fill="#3C3489">Preprocessing</text>
+  <text x="350" y="106" text-anchor="middle" font-size="11" fill="#534AB7">Rolling features</text>
+  <text x="350" y="121" text-anchor="middle" font-size="11" fill="#534AB7">Scaling · Train/test split</text>
+
+  <!-- Arrow 2 -->
+  <line x1="430" y1="95" x2="480" y2="95" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Training -->
+  <rect x="480" y="60" width="160" height="70" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
+  <text x="560" y="88" text-anchor="middle" font-weight="bold" fill="#633806">Model Training</text>
+  <text x="560" y="106" text-anchor="middle" font-size="11" fill="#854F0B">XGBoost · RF · LR</text>
+  <text x="560" y="121" text-anchor="middle" font-size="11" fill="#854F0B">MLflow tracking</text>
+
+  <!-- Arrow 3 -->
+  <line x1="640" y1="95" x2="690" y2="95" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Model Registry -->
+  <rect x="690" y="60" width="160" height="70" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1.5"/>
+  <text x="770" y="88" text-anchor="middle" font-weight="bold" fill="#712B13">Model Registry</text>
+  <text x="770" y="106" text-anchor="middle" font-size="11" fill="#993C1D">Best model saved</text>
+  <text x="770" y="121" text-anchor="middle" font-size="11" fill="#993C1D">Versioned artifacts</text>
+
+  <!-- Vertical arrow from Training down -->
+  <line x1="560" y1="130" x2="560" y2="200" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Evaluation row -->
+  <rect x="480" y="200" width="160" height="70" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.5"/>
+  <text x="560" y="228" text-anchor="middle" font-weight="bold" fill="#0C447C">Evaluation</text>
+  <text x="560" y="246" text-anchor="middle" font-size="11" fill="#185FA5">ROC-AUC · SHAP</text>
+  <text x="560" y="261" text-anchor="middle" font-size="11" fill="#185FA5">Drift detection (PSI)</text>
+
+  <!-- Arrow eval → serving -->
+  <line x1="480" y1="235" x2="430" y2="235" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Serving row -->
+  <rect x="270" y="200" width="160" height="70" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.5"/>
+  <text x="350" y="228" text-anchor="middle" font-weight="bold" fill="#27500A">FastAPI Serving</text>
+  <text x="350" y="246" text-anchor="middle" font-size="11" fill="#3B6D11">/predict · /health</text>
+  <text x="350" y="261" text-anchor="middle" font-size="11" fill="#3B6D11">JSON REST API</text>
+
+  <!-- Arrow serving → UI -->
+  <line x1="270" y1="235" x2="220" y2="235" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Streamlit UI -->
+  <rect x="60" y="200" width="160" height="70" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+  <text x="140" y="228" text-anchor="middle" font-weight="bold" fill="#3C3489">Streamlit UI</text>
+  <text x="140" y="246" text-anchor="middle" font-size="11" fill="#534AB7">Live prediction</text>
+  <text x="140" y="261" text-anchor="middle" font-size="11" fill="#534AB7">Data explorer</text>
+
+  <!-- Arrow UI down to monitoring -->
+  <line x1="140" y1="270" x2="140" y2="340" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Monitoring row -->
+  <rect x="60" y="340" width="160" height="70" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1.5"/>
+  <text x="140" y="368" text-anchor="middle" font-weight="bold" fill="#712B13">Monitoring</text>
+  <text x="140" y="386" text-anchor="middle" font-size="11" fill="#993C1D">PSI drift · Alerts</text>
+  <text x="140" y="401" text-anchor="middle" font-size="11" fill="#993C1D">Prediction shift log</text>
+
+  <!-- CI/CD -->
+  <rect x="480" y="340" width="160" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+  <text x="560" y="368" text-anchor="middle" font-weight="bold" fill="#085041">CI/CD Pipeline</text>
+  <text x="560" y="386" text-anchor="middle" font-size="11" fill="#0F6E56">GitHub Actions</text>
+  <text x="560" y="401" text-anchor="middle" font-size="11" fill="#0F6E56">Test → Train → Deploy</text>
+
+  <!-- Arrow eval → CI/CD -->
+  <line x1="560" y1="270" x2="560" y2="340" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Docker -->
+  <rect x="690" y="340" width="160" height="70" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
+  <text x="770" y="368" text-anchor="middle" font-weight="bold" fill="#633806">Docker</text>
+  <text x="770" y="386" text-anchor="middle" font-size="11" fill="#854F0B">Containerised API</text>
+  <text x="770" y="401" text-anchor="middle" font-size="11" fill="#854F0B">Reproducible envs</text>
+
+  <!-- Arrow CI/CD → Docker -->
+  <line x1="640" y1="375" x2="690" y2="375" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Bottom labels -->
+  <text x="450" y="465" text-anchor="middle" font-size="12" fill="#6c757d">Stack: Python · XGBoost · MLflow · FastAPI · Streamlit · Docker · GitHub Actions</text>
+  <text x="450" y="485" text-anchor="middle" font-size="12" fill="#6c757d">github.com/umerfarooq771/mlops-pipeline-template</text>
+
+  <!-- Legend -->
+  <rect x="200" y="490" width="14" height="14" rx="3" fill="#E1F5EE" stroke="#0F6E56"/>
+  <text x="218" y="502" font-size="11" fill="#444">Data</text>
+  <rect x="270" y="490" width="14" height="14" rx="3" fill="#EEEDFE" stroke="#534AB7"/>
+  <text x="288" y="502" font-size="11" fill="#444">ML Core</text>
+  <rect x="355" y="490" width="14" height="14" rx="3" fill="#FAEEDA" stroke="#854F0B"/>
+  <text x="373" y="502" font-size="11" fill="#444">Ops</text>
+  <rect x="415" y="490" width="14" height="14" rx="3" fill="#FAECE7" stroke="#993C1D"/>
+  <text x="433" y="502" font-size="11" fill="#444">Risk/Alert</text>
+  <rect x="510" y="490" width="14" height="14" rx="3" fill="#EAF3DE" stroke="#3B6D11"/>
+  <text x="528" y="502" font-size="11" fill="#444">Serving</text>
+</svg>
