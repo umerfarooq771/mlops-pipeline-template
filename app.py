@@ -1,7 +1,7 @@
 """
-Streamlit demo app for the MLOps Pipeline Template.
-Provides interactive model inference, SHAP explainability,
-and a monitoring dashboard — all in one UI.
+Streamlit MLOps Dashboard — Equipment Failure Detection
+Includes live prediction, data explorer, monitoring, and
+a real MLOps Control Panel: change hyperparameters → retrain → redeploy in-app.
 """
 import streamlit as st
 import pandas as pd
@@ -10,6 +10,8 @@ import joblib
 import json
 import os
 import sys
+import time
+import subprocess
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
@@ -25,27 +27,58 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-  .metric-card {
-    background: #f8f9fa; border-radius: 12px;
-    padding: 1rem 1.25rem; border: 1px solid #e9ecef;
-  }
-  .risk-low    { color: #2d6a4f; background: #d8f3dc; padding: 4px 12px; border-radius: 99px; font-weight: 600; }
-  .risk-medium { color: #7b4f00; background: #ffe8a1; padding: 4px 12px; border-radius: 99px; font-weight: 600; }
-  .risk-high   { color: #9d0208; background: #ffd6cc; padding: 4px 12px; border-radius: 99px; font-weight: 600; }
-  .risk-critical { color: #fff; background: #9d0208; padding: 4px 12px; border-radius: 99px; font-weight: 600; }
+  .risk-low    { color: #2d6a4f; background: #d8f3dc; padding: 4px 14px; border-radius: 99px; font-weight: 600; display:inline-block; }
+  .risk-medium { color: #7b4f00; background: #ffe8a1; padding: 4px 14px; border-radius: 99px; font-weight: 600; display:inline-block; }
+  .risk-high   { color: #9d0208; background: #ffd6cc; padding: 4px 14px; border-radius: 99px; font-weight: 600; display:inline-block; }
+  .risk-critical { color: #fff; background: #9d0208; padding: 4px 14px; border-radius: 99px; font-weight: 600; display:inline-block; }
+  .section-divider { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
+  .log-box { background: #0d1117; color: #58a6ff; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 280px; overflow-y: auto; }
 </style>
 """, unsafe_allow_html=True)
 
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+MODEL_CONFIG_PATH = "configs/model_config.json"
+os.makedirs("configs", exist_ok=True)
+
+DEFAULT_CONFIG = {
+    "model_type": "xgboost",
+    "n_estimators": 100,
+    "max_depth": 5,
+    "learning_rate": 0.1,
+    "scale_pos_weight": 20,
+    "test_size": 0.2,
+    "last_trained": None,
+    "last_roc_auc": None,
+    "last_avg_precision": None,
+}
+
+
+def load_config() -> dict:
+    if os.path.exists(MODEL_CONFIG_PATH):
+        with open(MODEL_CONFIG_PATH) as f:
+            return {**DEFAULT_CONFIG, **json.load(f)}
+    return DEFAULT_CONFIG.copy()
+
+
+def save_config(cfg: dict):
+    with open(MODEL_CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+
 @st.cache_resource
-def load_artifacts():
-    model, scaler = None, None
+def load_model_cached():
     try:
         model = joblib.load("models/xgboost_model.joblib")
         scaler = joblib.load("models/scaler.joblib")
+        return model, scaler
     except Exception:
-        pass
-    return model, scaler
+        return None, None
+
+
+def reload_model():
+    st.cache_resource.clear()
 
 
 @st.cache_data
@@ -56,7 +89,7 @@ def load_dataset():
         return None
 
 
-def build_features_from_inputs(temperature, vibration, pressure, rpm, oil_level):
+def build_features(temperature, vibration, pressure, rpm, oil_level):
     base = [temperature, vibration, pressure, rpm, oil_level]
     features = list(base)
     for v in base:
@@ -74,12 +107,130 @@ def risk_label(prob):
     else:            return "CRITICAL", "#6a040f", "🛑 Halt operations. Emergency maintenance required."
 
 
-model, scaler = load_artifacts()
-df = load_dataset()
+def run_retraining(cfg: dict, log_placeholder):
+    """Run retraining inline and stream logs to UI."""
+    logs = []
 
-st.sidebar.image("https://img.shields.io/badge/MLOps-Pipeline-blue?style=for-the-badge&logo=github", use_column_width=True)
-st.sidebar.markdown("## Navigation")
-page = st.sidebar.radio("", ["🔍 Live Prediction", "📊 Data Explorer", "📈 Monitoring Dashboard", "🧠 Model Info"])
+    def emit(msg):
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+        log_placeholder.markdown(
+            '<div class="log-box">' + "<br>".join(logs) + "</div>",
+            unsafe_allow_html=True
+        )
+
+    emit("🚀 Retraining triggered...")
+    emit(f"   Model type     : {cfg['model_type']}")
+    emit(f"   n_estimators   : {cfg['n_estimators']}")
+    emit(f"   max_depth      : {cfg['max_depth']}")
+    emit(f"   learning_rate  : {cfg['learning_rate']}")
+    emit(f"   scale_pos_weight: {cfg['scale_pos_weight']}")
+    emit(f"   test_size      : {cfg['test_size']}")
+    time.sleep(0.5)
+
+    # ── Step 1: generate / verify data ──
+    emit("📦 Step 1/4 — Verifying dataset...")
+    if not os.path.exists("data/synthetic/sensor_data.csv"):
+        emit("   Dataset not found — generating...")
+        subprocess.run(["python", "data/generate_synthetic_data.py"], capture_output=True)
+        emit("   Dataset generated (5,000 rows).")
+    else:
+        df = pd.read_csv("data/synthetic/sensor_data.csv")
+        emit(f"   Dataset ready: {len(df):,} rows, failure rate {df['failure'].mean():.2%}")
+    time.sleep(0.4)
+
+    # ── Step 2: preprocess ──
+    emit("🔧 Step 2/4 — Preprocessing & feature engineering...")
+    from src.ingestion.preprocess import preprocess
+    X_train, X_test, y_train, y_test, feature_cols = preprocess(
+        "data/synthetic/sensor_data.csv",
+        test_size=cfg["test_size"],
+        save_scaler=True
+    )
+    emit(f"   Train: {len(X_train):,} rows | Test: {len(X_test):,} rows")
+    emit(f"   Features engineered: {len(feature_cols)}")
+    time.sleep(0.4)
+
+    # ── Step 3: train ──
+    emit("🤖 Step 3/4 — Training model...")
+    import xgboost as xgb
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+
+    model_map = {
+        "xgboost": xgb.XGBClassifier(
+            n_estimators=cfg["n_estimators"],
+            max_depth=cfg["max_depth"],
+            learning_rate=cfg["learning_rate"],
+            scale_pos_weight=cfg["scale_pos_weight"],
+            use_label_encoder=False,
+            eval_metric="logloss",
+            random_state=42,
+        ),
+        "random_forest": RandomForestClassifier(
+            n_estimators=cfg["n_estimators"],
+            max_depth=cfg["max_depth"] if cfg["max_depth"] > 0 else None,
+            class_weight="balanced",
+            random_state=42,
+        ),
+        "logistic_regression": LogisticRegression(
+            class_weight="balanced", max_iter=1000, random_state=42
+        ),
+    }
+
+    model = model_map[cfg["model_type"]]
+    model.fit(X_train, y_train)
+    emit(f"   Training complete.")
+    time.sleep(0.3)
+
+    # ── Step 4: evaluate & save ──
+    emit("📊 Step 4/4 — Evaluating & saving model...")
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    y_prob = model.predict_proba(X_test)[:, 1]
+    roc_auc = round(roc_auc_score(y_test, y_prob), 4)
+    avg_prec = round(average_precision_score(y_test, y_prob), 4)
+
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(model, "models/xgboost_model.joblib")
+
+    cfg["last_trained"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cfg["last_roc_auc"] = roc_auc
+    cfg["last_avg_precision"] = avg_prec
+    save_config(cfg)
+
+    emit(f"   ROC-AUC        : {roc_auc}")
+    emit(f"   Avg Precision  : {avg_prec}")
+    emit(f"   Model saved    : models/xgboost_model.joblib")
+    time.sleep(0.3)
+    emit("✅ Retraining complete — model is live!")
+
+    return roc_auc, avg_prec
+
+
+# ── sidebar ───────────────────────────────────────────────────────────────────
+
+st.sidebar.markdown("## ⚙️ MLOps Pipeline")
+page = st.sidebar.radio("", [
+    "🔍 Live Prediction",
+    "📊 Data Explorer",
+    "🔁 MLOps Control Panel",
+    "📈 Monitoring Dashboard",
+    "🧠 Model Info"
+])
+
+cfg = load_config()
+
+if cfg["last_trained"]:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Last Training Run**")
+    st.sidebar.caption(cfg["last_trained"])
+    if cfg["last_roc_auc"]:
+        st.sidebar.metric("ROC-AUC", cfg["last_roc_auc"])
+        st.sidebar.metric("Avg Precision", cfg["last_avg_precision"])
+else:
+    st.sidebar.info("No training run recorded yet.")
+
+
+# ── pages ─────────────────────────────────────────────────────────────────────
 
 if page == "🔍 Live Prediction":
     st.title("⚙️ Equipment Failure Detection")
@@ -94,23 +245,21 @@ if page == "🔍 Live Prediction":
         rpm         = st.slider("⚙️ RPM", 1500, 4000, 3000, 50)
         oil_level   = st.slider("🛢️ Oil Level", 0.0, 1.0, 0.8, 0.01)
         machine_id  = st.selectbox("🏭 Machine ID", ["M01","M02","M03","M04","M05"])
-
         predict_btn = st.button("🔮 Predict Failure Risk", use_container_width=True, type="primary")
 
     with col2:
         st.subheader("Prediction Result")
         if predict_btn:
-            features = build_features_from_inputs(temperature, vibration, pressure, rpm, oil_level)
+            model, scaler = load_model_cached()
+            features = build_features(temperature, vibration, pressure, rpm, oil_level)
             if scaler:
                 features = scaler.transform(features)
-
             if model:
                 prob = float(model.predict_proba(features)[0][1])
             else:
-                prob = min(1.0, max(0.0, (temperature - 75) / 30 + (vibration - 0.5) / 0.5 * 0.3))
+                prob = min(1.0, max(0.0, (temperature - 75)/30 + (vibration - 0.5)/0.5*0.3))
 
             risk, color, advice = risk_label(prob)
-
             st.metric("Failure Probability", f"{prob:.1%}")
             st.markdown(f"**Risk Level:** <span style='color:{color}; font-size:18px; font-weight:700'>{risk}</span>", unsafe_allow_html=True)
             st.info(advice)
@@ -123,10 +272,10 @@ if page == "🔍 Live Prediction":
                     "axis": {"range": [0, 100]},
                     "bar": {"color": color},
                     "steps": [
-                        {"range": [0, 30], "color": "#d8f3dc"},
+                        {"range": [0, 30],  "color": "#d8f3dc"},
                         {"range": [30, 60], "color": "#ffe8a1"},
                         {"range": [60, 80], "color": "#ffd6cc"},
-                        {"range": [80, 100], "color": "#ffadad"},
+                        {"range": [80, 100],"color": "#ffadad"},
                     ],
                     "threshold": {"line": {"color": "black", "width": 3}, "thickness": 0.75, "value": 60}
                 },
@@ -137,29 +286,149 @@ if page == "🔍 Live Prediction":
         else:
             st.info("👈 Adjust sensor inputs and click **Predict** to see results.")
 
+
 elif page == "📊 Data Explorer":
     st.title("📊 Synthetic Sensor Data Explorer")
+    df = load_dataset()
     if df is not None:
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Records", f"{len(df):,}")
-        col2.metric("Machines", df["machine_id"].nunique())
-        col3.metric("Failure Events", int(df["failure"].sum()))
-        col4.metric("Failure Rate", f"{df['failure'].mean():.2%}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Records", f"{len(df):,}")
+        c2.metric("Machines", df["machine_id"].nunique())
+        c3.metric("Failure Events", int(df["failure"].sum()))
+        c4.metric("Failure Rate", f"{df['failure'].mean():.2%}")
 
-        st.subheader("Sensor Trends Over Time")
-        sensor = st.selectbox("Select sensor", ["temperature_c", "vibration_mms", "pressure_bar", "rpm", "oil_level"])
+        sensor = st.selectbox("Select sensor", ["temperature_c","vibration_mms","pressure_bar","rpm","oil_level"])
         fig = px.line(df.sample(500, random_state=42).sort_values("timestamp"),
                       x="timestamp", y=sensor, color="machine_id",
                       title=f"{sensor} over time")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Feature Distributions")
-        fig2 = px.histogram(df, x=sensor, color=df["failure"].map({0: "Normal", 1: "Failure"}),
+        fig2 = px.histogram(df, x=sensor,
+                            color=df["failure"].map({0:"Normal",1:"Failure"}),
                             barmode="overlay", nbins=50,
-                            color_discrete_map={"Normal": "#457b9d", "Failure": "#e63946"})
+                            color_discrete_map={"Normal":"#457b9d","Failure":"#e63946"})
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.warning("Dataset not found. Run `python data/generate_synthetic_data.py` first.")
+
+
+elif page == "🔁 MLOps Control Panel":
+    st.title("🔁 MLOps Control Panel")
+    st.caption("Change model settings and retrain — the live model updates instantly.")
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("Model Configuration")
+
+        model_type = st.selectbox(
+            "Model Type",
+            ["xgboost", "random_forest", "logistic_regression"],
+            index=["xgboost","random_forest","logistic_regression"].index(cfg["model_type"]),
+            help="Algorithm to train. XGBoost performs best on this dataset."
+        )
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("**Hyperparameters**")
+
+        n_estimators = st.slider(
+            "n_estimators (trees)", 50, 500, cfg["n_estimators"], 50,
+            help="More trees = better accuracy but slower training."
+        )
+        max_depth = st.slider(
+            "max_depth", 2, 12, cfg["max_depth"], 1,
+            help="Deeper trees capture more complexity but may overfit."
+        )
+
+        show_lr = model_type in ["xgboost", "logistic_regression"]
+        learning_rate = st.slider(
+            "learning_rate", 0.01, 0.5, cfg["learning_rate"], 0.01,
+            disabled=not show_lr,
+            help="Step size for gradient updates. Lower = more robust, slower."
+        ) if show_lr else cfg["learning_rate"]
+
+        scale_pos_weight = st.slider(
+            "scale_pos_weight (class imbalance)", 5, 50, cfg["scale_pos_weight"], 5,
+            disabled=model_type != "xgboost",
+            help="Compensates for class imbalance. Higher = more sensitive to failures."
+        ) if model_type == "xgboost" else cfg["scale_pos_weight"]
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("**Training Settings**")
+        test_size = st.slider(
+            "Test split size", 0.1, 0.4, cfg["test_size"], 0.05,
+            help="Fraction of data held out for evaluation."
+        )
+
+        new_cfg = {
+            **cfg,
+            "model_type": model_type,
+            "n_estimators": n_estimators,
+            "max_depth": max_depth,
+            "learning_rate": learning_rate,
+            "scale_pos_weight": scale_pos_weight,
+            "test_size": test_size,
+        }
+
+        config_changed = any(new_cfg[k] != cfg[k] for k in
+                             ["model_type","n_estimators","max_depth",
+                              "learning_rate","scale_pos_weight","test_size"])
+
+        if config_changed:
+            st.info("⚠️ You have unsaved changes. Click **Retrain** to apply.")
+
+        retrain_btn = st.button(
+            "🚀 Retrain & Redeploy Model",
+            type="primary",
+            use_container_width=True,
+            help="Saves config, retrains the model, and hot-reloads it into the app."
+        )
+
+    with col2:
+        st.subheader("Training Log")
+        log_placeholder = st.empty()
+
+        if not retrain_btn:
+            if cfg["last_trained"]:
+                log_placeholder.markdown(
+                    f'<div class="log-box">'
+                    f'Last run: {cfg["last_trained"]}<br>'
+                    f'ROC-AUC: {cfg["last_roc_auc"]}<br>'
+                    f'Avg Precision: {cfg["last_avg_precision"]}<br>'
+                    f'Model type: {cfg["model_type"]}<br><br>'
+                    f'Ready — adjust settings and click Retrain to run again.'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                log_placeholder.markdown(
+                    '<div class="log-box">Waiting for retraining job...</div>',
+                    unsafe_allow_html=True
+                )
+
+        if retrain_btn:
+            save_config(new_cfg)
+            cfg = new_cfg
+
+            with st.spinner(""):
+                roc_auc, avg_prec = run_retraining(cfg, log_placeholder)
+
+            reload_model()
+
+            st.success(f"✅ Model retrained and live! ROC-AUC: **{roc_auc}** | Avg Precision: **{avg_prec}**")
+
+            st.markdown("---")
+            st.markdown("**Before vs After**")
+            prev_auc = cfg.get("last_roc_auc") or roc_auc
+            comp_df = pd.DataFrame({
+                "Metric": ["ROC-AUC", "Avg Precision"],
+                "Previous": [prev_auc, cfg.get("last_avg_precision") or avg_prec],
+                "New": [roc_auc, avg_prec]
+            })
+            st.dataframe(comp_df, use_container_width=True, hide_index=True)
+
+            st.info("🔍 Switch to **Live Prediction** to test the newly deployed model.")
+
 
 elif page == "📈 Monitoring Dashboard":
     st.title("📈 Model Monitoring Dashboard")
@@ -173,11 +442,11 @@ elif page == "📈 Monitoring Dashboard":
         "n_predictions": np.random.randint(80, 150, 30)
     })
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Avg Failure Prob (last 7d)", f"{sim_df['avg_failure_prob'].tail(7).mean():.2%}",
-                delta=f"{(sim_df['avg_failure_prob'].tail(7).mean() - sim_df['avg_failure_prob'].head(7).mean()):.2%}")
-    col2.metric("High Risk Rate", f"{sim_df['high_risk_pct'].tail(7).mean():.2%}")
-    col3.metric("Total Predictions (30d)", f"{sim_df['n_predictions'].sum():,}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Avg Failure Prob (7d)", f"{sim_df['avg_failure_prob'].tail(7).mean():.2%}",
+              delta=f"{(sim_df['avg_failure_prob'].tail(7).mean() - sim_df['avg_failure_prob'].head(7).mean()):.2%}")
+    c2.metric("High Risk Rate", f"{sim_df['high_risk_pct'].tail(7).mean():.2%}")
+    c3.metric("Total Predictions (30d)", f"{sim_df['n_predictions'].sum():,}")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=sim_df["date"], y=sim_df["avg_failure_prob"],
@@ -187,43 +456,29 @@ elif page == "📈 Monitoring Dashboard":
     fig.update_layout(title="Prediction Drift Over Time", height=320)
     st.plotly_chart(fig, use_container_width=True)
 
+    fig2 = px.bar(sim_df, x="date", y="n_predictions",
+                  title="Daily Prediction Volume", color_discrete_sequence=["#457b9d"])
+    fig2.update_layout(height=260)
+    st.plotly_chart(fig2, use_container_width=True)
+
+
 elif page == "🧠 Model Info":
     st.title("🧠 Model Information")
-    st.markdown("""
+
+    current_cfg = load_config()
+    st.markdown(f"""
     | Property | Value |
     |---|---|
-    | **Model Type** | XGBoost Classifier |
-    | **Task** | Binary Classification (Failure Detection) |
-    | **Features** | 17 (5 raw sensors + 10 rolling + 2 ratios) |
+    | **Model Type** | {current_cfg['model_type']} |
+    | **n_estimators** | {current_cfg['n_estimators']} |
+    | **max_depth** | {current_cfg['max_depth']} |
+    | **learning_rate** | {current_cfg['learning_rate']} |
+    | **Last Trained** | {current_cfg.get('last_trained') or 'Not yet trained'} |
+    | **ROC-AUC** | {current_cfg.get('last_roc_auc') or '—'} |
+    | **Avg Precision** | {current_cfg.get('last_avg_precision') or '—'} |
+    | **Features** | 17 (5 raw + 10 rolling + 2 ratios) |
     | **Training Data** | 5,000 synthetic sensor readings |
-    | **Experiment Tracking** | MLflow |
-    | **Deployment** | FastAPI + Streamlit |
     """)
-
-    st.subheader("Pipeline Architecture")
-    st.code("""
-    Raw Sensor Data
-         │
-    ┌────▼──────────┐
-    │  Preprocessing │  (feature engineering, rolling windows, scaling)
-    └────┬──────────┘
-         │
-    ┌────▼──────────┐
-    │    Training    │  (XGBoost + RF + LR comparison via MLflow)
-    └────┬──────────┘
-         │
-    ┌────▼──────────┐
-    │   Evaluation  │  (ROC-AUC, SHAP explainability, drift detection)
-    └────┬──────────┘
-         │
-    ┌────▼──────────┐
-    │  FastAPI Serve │  /predict · /health
-    └────┬──────────┘
-         │
-    ┌────▼──────────┐
-    │   Monitoring  │  (PSI drift, prediction shift alerts)
-    └───────────────┘
-    """, language="text")
 
     st.subheader("Feature Importance (SHAP)")
     shap_data = {
@@ -231,10 +486,37 @@ elif page == "🧠 Model Info":
         "pressure_bar": 0.15, "rpm": 0.12,
         "oil_level": 0.05, "temp_vibration_ratio": 0.03, "other": 0.02
     }
-    fig = px.bar(
-        x=list(shap_data.values()), y=list(shap_data.keys()),
-        orientation="h", title="Mean |SHAP| Feature Importance",
-        color=list(shap_data.values()), color_continuous_scale="Blues"
-    )
-    fig.update_layout(height=350, showlegend=False)
+    fig = px.bar(x=list(shap_data.values()), y=list(shap_data.keys()),
+                 orientation="h", title="Mean |SHAP| Feature Importance",
+                 color=list(shap_data.values()), color_continuous_scale="Blues")
+    fig.update_layout(height=320, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Pipeline Architecture")
+    st.code("""
+Raw Sensor Data
+     │
+┌────▼──────────┐
+│  Preprocessing │  rolling windows, scaling
+└────┬──────────┘
+     │
+┌────▼──────────┐
+│    Training    │  XGBoost / RF / LR + MLflow
+└────┬──────────┘
+     │
+┌────▼──────────┐
+│   Evaluation  │  ROC-AUC, SHAP, drift PSI
+└────┬──────────┘
+     │
+┌────▼──────────┐   ◄── MLOps Control Panel
+│  Hot Reload   │       change params → retrain
+└────┬──────────┘       → live in seconds
+     │
+┌────▼──────────┐
+│  FastAPI Serve │  /predict · /health
+└────┬──────────┘
+     │
+┌────▼──────────┐
+│   Monitoring  │  PSI drift, prediction alerts
+└───────────────┘
+    """, language="text")
